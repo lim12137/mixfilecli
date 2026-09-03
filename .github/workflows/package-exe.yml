@@ -14,6 +14,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download official jar from upstream release
         shell: pwsh
         run: |
@@ -50,17 +52,40 @@ jobs:
           if (-not (Test-Path "output\MixFile\MixFile.exe")) { throw "MixFile.exe not produced" }
           Get-ChildItem "output\MixFile" | Format-Table Name,Length
 
+      - name: Download dispatch (Rust dispatch-proxy)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/alexkirsz/dispatch/releases/latest/download/dispatch-proxy-x86_64-pc-windows-msvc.tar.gz" -OutFile dispatch.tar.gz
+          New-Item -ItemType Directory -Path dispatch -Force | Out-Null
+          tar -xzf dispatch.tar.gz -C dispatch
+          $exe = Get-ChildItem -Path dispatch -Recurse -Filter *.exe | Select-Object -First 1
+          if (-not $exe) { throw "dispatch exe not found in tarball" }
+          Move-Item $exe.FullName dispatch\dispatch.exe
+          Get-ChildItem dispatch | Format-Table Name,Length
+
+      - name: Assemble bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "MixFile-accel" -Force | Out-Null
+          Copy-Item -Recurse "output\MixFile" "MixFile-accel\MixFile"
+          Copy-Item -Recurse "dispatch" "MixFile-accel\dispatch"
+          Copy-Item "packaging\launcher.ps1" "MixFile-accel\"
+          Copy-Item "packaging\Start-MixFile.bat" "MixFile-accel\"
+          Copy-Item "packaging\List-Interfaces.bat" "MixFile-accel\"
+          Copy-Item "packaging\README.txt" "MixFile-accel\"
+          Get-ChildItem "MixFile-accel" | Format-Table Name,Length
+
       - name: Zip bundle
         shell: pwsh
         run: |
-          Compress-Archive -Path "output\MixFile" -DestinationPath "MixFile-${{ inputs.version }}-windows-x64.zip"
-          Get-Item "MixFile-${{ inputs.version }}-windows-x64.zip" | Format-List Name,Length
+          Compress-Archive -Path "MixFile-accel" -DestinationPath "MixFile-${{ inputs.version }}-windows-x64-accel.zip"
+          Get-Item "MixFile-${{ inputs.version }}-windows-x64-accel.zip" | Format-List Name,Length
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MixFile-${{ inputs.version }}-windows-x64
-          path: MixFile-${{ inputs.version }}-windows-x64.zip
+          name: MixFile-${{ inputs.version }}-windows-x64-accel
+          path: MixFile-${{ inputs.version }}-windows-x64-accel.zip
           if-no-files-found: error
 
       - name: Publish to fork release
@@ -70,6 +95,6 @@ jobs:
         run: |
           $v = "${{ inputs.version }}"
           gh release delete "exe-$v" --yes --cleanup-tag --repo $env:GITHUB_REPOSITORY 2>$null
-          gh release create "exe-$v" "MixFile-$v-windows-x64.zip" --repo $env:GITHUB_REPOSITORY `
-            --title "MixFile CLI $v - Windows exe (bundled JRE)" `
-            --notes "官方 mixfile-cli-$v.jar + jpackage 打包，自带 JRE 21 运行时，无需安装 Java。解压后运行 MixFile.exe，浏览器打开 http://localhost:4719"
+          gh release create "exe-$v" "MixFile-$v-windows-x64-accel.zip" --repo $env:GITHUB_REPOSITORY `
+            --title "MixFile CLI $v - Windows exe 加速整合版" `
+            --notes "官方 mixfile-cli-$v.jar + jpackage 打包（自带 JRE 21，无需 Java），内置 dispatch（Rust 版 dispatch-proxy）双网卡聚合加速。解压后双击 Start-MixFile.bat 叠加 WiFi+有线带宽；双击 MixFile\MixFile.exe 为普通直连。"
