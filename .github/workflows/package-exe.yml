@@ -69,7 +69,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $v = "${{ inputs.version }}"
-          gh release delete "exe-$v" --yes --cleanup-tag 2>$null
-          gh release create "exe-$v" "MixFile-$v-windows-x64.zip" `
+          gh release delete "exe-$v" --yes --cleanup-tag --repo $env:GITHUB_REPOSITORY 2>$null
+          gh release create "exe-$v" "MixFile-$v-windows-x64.zip" --repo $env:GITHUB_REPOSITORY `
             --title "MixFile CLI $v - Windows exe (bundled JRE)" `
             --notes "官方 mixfile-cli-$v.jar + jpackage 打包，自带 JRE 21 运行时，无需安装 Java。解压后运行 MixFile.exe，浏览器打开 http://localhost:4719"
